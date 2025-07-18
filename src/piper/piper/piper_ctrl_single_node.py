@@ -16,6 +16,8 @@ from piper_msgs.srv import Enable
 from geometry_msgs.msg import Pose
 from scipy.spatial.transform import Rotation as R  # For Euler angle to quaternion conversion
 from numpy import clip
+import yaml
+import numpy as np
 
 
 class PiperRosNode(Node):
@@ -28,12 +30,27 @@ class PiperRosNode(Node):
         self.declare_parameter('auto_enable', False)
         self.declare_parameter('gripper_exist', True)
         self.declare_parameter('gripper_val_mutiple', 1)
+        self.declare_parameter('joint_offsets_config', "")
 
         self.can_port = self.get_parameter('can_port').get_parameter_value().string_value
         self.auto_enable = self.get_parameter('auto_enable').get_parameter_value().bool_value
         self.gripper_exist = self.get_parameter('gripper_exist').get_parameter_value().bool_value
         self.gripper_val_mutiple = self.get_parameter('gripper_val_mutiple').get_parameter_value().integer_value
         self.gripper_val_mutiple = max(0, min(self.gripper_val_mutiple, 10))
+        self.joint_offsets_config = self.get_parameter('joint_offsets_config').get_parameter_value().string_value
+
+        if not self.joint_offsets_config:
+            self.joint_offsets = np.array([0.0]*7)
+        else:
+            with open(self.joint_offsets_config, 'r') as f:
+                try:
+                    data = yaml.safe_load(f)
+                    self.joint_offsets  = np.array(data.get('offsets', None))
+
+                except yaml.YAMLError as exc:
+                    self.get_logger().error(f"Error parsing YAML file: {exc}")
+                    exit()
+
 
         self.get_logger().info(f"can_port is {self.can_port}")
         self.get_logger().info(f"auto_enable is {self.auto_enable}")
@@ -149,13 +166,13 @@ class PiperRosNode(Node):
         self.joint_states.header.stamp = self.get_clock().now().to_msg()
         # Here, you can set the joint positions to any value you want
         # The raw data obtained is in degrees multiplied by 1000. To convert to radians, divide by 1000, multiply by π/180, and limit to 5 decimal places
-        joint_0: float = (self.piper.GetArmJointMsgs().joint_state.joint_1 / 1000) * 0.017444
-        joint_1: float = (self.piper.GetArmJointMsgs().joint_state.joint_2 / 1000) * 0.017444
-        joint_2: float = (self.piper.GetArmJointMsgs().joint_state.joint_3 / 1000) * 0.017444
-        joint_3: float = (self.piper.GetArmJointMsgs().joint_state.joint_4 / 1000) * 0.017444
-        joint_4: float = (self.piper.GetArmJointMsgs().joint_state.joint_5 / 1000) * 0.017444
-        joint_5: float = (self.piper.GetArmJointMsgs().joint_state.joint_6 / 1000) * 0.017444
-        joint_6: float = self.piper.GetArmGripperMsgs().gripper_state.grippers_angle / 1000000
+        joint_0: float = (self.piper.GetArmJointMsgs().joint_state.joint_1 / 1000) * 0.017444 + self.joint_offsets[0]
+        joint_1: float = (self.piper.GetArmJointMsgs().joint_state.joint_2 / 1000) * 0.017444 + self.joint_offsets[1]
+        joint_2: float = (self.piper.GetArmJointMsgs().joint_state.joint_3 / 1000) * 0.017444 + self.joint_offsets[2]
+        joint_3: float = (self.piper.GetArmJointMsgs().joint_state.joint_4 / 1000) * 0.017444 + self.joint_offsets[3]
+        joint_4: float = (self.piper.GetArmJointMsgs().joint_state.joint_5 / 1000) * 0.017444 + self.joint_offsets[4]
+        joint_5: float = (self.piper.GetArmJointMsgs().joint_state.joint_6 / 1000) * 0.017444 + self.joint_offsets[5]
+        joint_6: float = self.piper.GetArmGripperMsgs().gripper_state.grippers_angle / 1000000 + self.joint_offsets[6]
         vel_0: float = self.piper.GetArmHighSpdInfoMsgs().motor_1.motor_speed / 1000
         vel_1: float = self.piper.GetArmHighSpdInfoMsgs().motor_2.motor_speed / 1000
         vel_2: float = self.piper.GetArmHighSpdInfoMsgs().motor_3.motor_speed / 1000
@@ -177,13 +194,13 @@ class PiperRosNode(Node):
 
     def PublishArmCtrlAndGripper(self):
         self.joint_ctrl.header.stamp = self.get_clock().now().to_msg()
-        joint_0: float = (self.piper.GetArmJointCtrl().joint_ctrl.joint_1/1000) * 0.017444
-        joint_1: float = (self.piper.GetArmJointCtrl().joint_ctrl.joint_2/1000) * 0.017444
-        joint_2: float = (self.piper.GetArmJointCtrl().joint_ctrl.joint_3/1000) * 0.017444
-        joint_3: float = (self.piper.GetArmJointCtrl().joint_ctrl.joint_4/1000) * 0.017444
-        joint_4: float = (self.piper.GetArmJointCtrl().joint_ctrl.joint_5/1000) * 0.017444
-        joint_5: float = (self.piper.GetArmJointCtrl().joint_ctrl.joint_6/1000) * 0.017444
-        joint_6: float = self.piper.GetArmGripperCtrl().gripper_ctrl.grippers_angle/1000000
+        joint_0: float = (self.piper.GetArmJointCtrl().joint_ctrl.joint_1/1000) * 0.017444 + self.joint_offsets[0]
+        joint_1: float = (self.piper.GetArmJointCtrl().joint_ctrl.joint_2/1000) * 0.017444 + self.joint_offsets[1]
+        joint_2: float = (self.piper.GetArmJointCtrl().joint_ctrl.joint_3/1000) * 0.017444 + self.joint_offsets[2]
+        joint_3: float = (self.piper.GetArmJointCtrl().joint_ctrl.joint_4/1000) * 0.017444 + self.joint_offsets[3]
+        joint_4: float = (self.piper.GetArmJointCtrl().joint_ctrl.joint_5/1000) * 0.017444 + self.joint_offsets[4]
+        joint_5: float = (self.piper.GetArmJointCtrl().joint_ctrl.joint_6/1000) * 0.017444 + self.joint_offsets[5]
+        joint_6: float = self.piper.GetArmGripperCtrl().gripper_ctrl.grippers_angle/1000000 + self.joint_offsets[6]
         self.joint_ctrl.position = [joint_0, joint_1, joint_2, joint_3, joint_4, joint_5, joint_6]  # Example values
         self.joint_ctrl_pub.publish(self.joint_ctrl)
 
